@@ -40,7 +40,7 @@ button, a.btn{
 .back{margin-top:12px}
 .question-image {
   display: block;
-  max-width: 80%;   /* 横幅を80%に縮小 */
+  max-width: 60%;   /* 横幅を80%に縮小 */
   margin: 0 auto;   /* 中央寄せ */
   height: auto;     /* 縦横比を保持 */
 }
