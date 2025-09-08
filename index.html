@@ -22,4 +22,20 @@
       <div class="grid">
         <a class="btn tile" href="subject.html?name=算数"><span>算数</span></a>
         <a class="btn tile" href="subject.html?name=国語"><span>国語</span></a>
-        <a
+        <a class="btn tile" href="subject.html?name=理科"><span>理科</span></a>
+        <a class="btn tile" href="subject.html?name=社会"><span>社会</span></a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // ポイント表示＆リセット
+    const key = 'mbg_points';
+    const $ = (id)=>document.getElementById(id);
+    function getPoints(){ return +(localStorage.getItem(key) || 0); }
+    function setPoints(v){ localStorage.setItem(key, v); $('points').textContent = v; }
+    $('resetPoints').onclick = ()=>{ if(confirm('本日の獲得ポイントを0にしますか？')) setPoints(0); };
+    setPoints(getPoints());
+  </script>
+</body>
+</html>
