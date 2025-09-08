@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>科目を選択</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="center">
+    <section class="card">
+      <h1 id="subjectTitle">科目</h1>
+
+      <div class="counter">
+        <div class="pill">本日の獲得ポイント：<span id="points">0</span></div>
+        <a class="btn ghost" href="./">トップへ戻る</a>
+      </div>
+
+      <div class="hr"></div>
+      <p class="muted" style="margin:0 0 8px">モードを選んでください</p>
+
+      <div class="row">
+        <!-- 次のページ（出題画面）への遷移。後で quiz.html を実装して接続します -->
+        <a class="btn primary" id="allBtn">全問モード</a>
+        <a class="btn ghost" id="wrongBtn">未正解モード</a>
+      </div>
+
+      <div class="back">
+        <a class="btn ghost" href="./">← 科目選択に戻る</a>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    // 共有：ポイント表示
+    const key = 'mbg_points';
+    const $ = (id)=>document.getElementById(id);
+    function getPoints(){ return +(localStorage.getItem(key) || 0); }
+    function setPoints(v){ localStorage.setItem(key, v); $('points').textContent = v; }
+    setPoints(getPoints());
+
+    // URLから科目名を取得
+    const params = new URLSearchParams(location.search);
+    const subject = params.get('name') || '科目';
+    $('subjectTitle').textContent = subject;
+
+    // 後で quiz.html を実装してここへ遷移
+    const to = (mode)=> `quiz.html?subject=${encodeURIComponent(subject)}&mode=${mode}`;
+    $('allBtn').href   = to('all');
+    $('wrongBtn').href = to('wrongOrNew');
+  </script>
+</body>
+</html>
