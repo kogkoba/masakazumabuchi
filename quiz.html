@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>出題｜まぶち宿題ゲーム</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="center">
+    <section class="card" style="width:min(860px,92vw)">
+      <!-- ヘッダー -->
+      <div class="flex-between" style="gap:12px">
+        <h1 id="title" style="margin:0">—</h1>
+        <div class="counter">
+          <div class="pill">本日の獲得ポイント：<span id="points">0</span></div>
+          <a class="btn ghost" href="./">トップへ</a>
+        </div>
+      </div>
+      <div class="hr"></div>
+
+      <!-- 進行表示 -->
+      <div class="row" style="margin-bottom:8px">
+        <div class="pill">モード：<span id="modeLabel">—</span></div>
+        <div class="pill">問題 <span id="idx">0</span>/<span id="total">0</span></div>
+      </div>
+
+      <!-- 画像エリア -->
+      <div class="qimg-wrap" id="qimgWrap" hidden>
+        <img id="qimg" alt="question image" style="max-width:100%;border-radius:8px;">
+      </div>
+
+      <!-- 問題 -->
+      <div id="qtext" class="big" style="margin:12px 0">—</div>
+
+      <!-- 回答入力 -->
+      <input id="answer" type="text"
+             placeholder="ここに入力（Enterで判定 → もう一度Enterで次へ）"
+             autocomplete="off" />
+
+      <!-- 判定表示 -->
+      <div id="result" class="muted" style="min-height:24px; margin-top:8px"></div>
+
+      <!-- 操作ボタン -->
+      <div class="row" style="margin-top:10px">
+        <button class="primary" id="judgeBtn">判定（Enter）</button>
+        <button class="ghost" id="skipBtn" title="カウントせず次へ">スキップ</button>
+        <button class="ghost" id="exitBtn">終了</button>
+      </div>
+    </section>
+  </main>
+
+  <div class="keyboard-spacer" id="spacer"></div>
+
+  <script>
+    // ========= 基本ユーティリティ =========
+    const $ = (id)=>document.getElementById(id);
+
+    // ポイント
+    const keyPoints = 'mbg_points';
+    const getPoints = ()=> +(localStorage.getItem(keyPoints)||0);
+    const setPoints = v=>{ localStorage.setItem(keyPoints,v); $('points').textContent=v };
+    setPoints(getPoints());
+
+    // 固定シートID（こぐれさんのシート）
+    const SHEET_ID = "1ldp5wandrWwB0GVfB9qP9i6qAoGqRz0D6tzDIb7FXJ8";
+
+    // 進捗（科目ごと）
+    const progressKeyBase = (sub)=> `mbg_${SHEET_ID}_${sub}`;
+    const kAnswered = (sub)=> progressKeyBase(sub)+':answered';
+    const kWrong    = (sub)=> progressKeyBase(sub)+':wrong';
+    const getSet = (k)=> new Set(JSON.parse(localStorage.getItem(k)||'[]'));
+    const saveSet = (k,s)=> localStorage.setItem(k, JSON.stringify([...s]));
+
+    // 正規化（全角→半角・空白除去）
+    const normalize = (s)=> (s||'').toString().trim()
+      .replace(/\s+/g,'')
+      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0)-0xFEE0));
+
+    const shuffle = (arr)=>{ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]] } return arr; };
+
+    // ========= パラメータ =========
+    const params  = new URLSearchParams(location.search);
+    const subject = params.get('subject') || '算数'; // タブ名
+    const mode    = params.get('mode') || 'all';     // all / wrongOrNew
+
+    $('title').textContent = `${subject}`;
+    $('modeLabel').textContent = (mode==='all') ? '全問' : '未正解/新規';
+
+    // ========= シート読込 =========
+    async function fetchSheetTab(tab){
+      const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tab)}`;
+      const res = await fetch(url);
+      const txt = await res.text();
+      const json = JSON.parse(txt.match(/google\.visualization\.Query\.setResponse\((.*)\);?/s)[1]);
+      const rows = json.table.rows;
+      const cols = json.table.cols.map(c=>c.label||c.id);
+      return rows.map(r=>{
+        const obj={}; cols.forEach((c,i)=>{ obj[c] = r.c[i]? (r.c[i].v??'') : '' });
+        return obj;
+      });
+    }
+
+    // ========= 出題ロジック =========
+    let questions = [], list = [], cursor = 0, current = null, awaitingNext = false;
+
+    function buildPool(rows){
+      const answered = getSet(kAnswered(subject));
+      const wrong    = getSet(kWrong(subject));
+      let pool = rows.filter(q => (q.enabled===true || String(q.enabled).toUpperCase()==='TRUE'));
+      if(mode==='wrongOrNew'){
+        pool = pool.filter(q => wrong.has(String(q.id)) || !answered.has(String(q.id)));
+      }
+      return shuffle(pool);
+    }
+
+    function render(){
+      if(cursor>=list.length){
+        $('qimgWrap').hidden = true;
+        $('qtext').textContent = 'おつかれさま！出題は終了です。';
+        $('answer').value = ''; $('answer').blur();
+        $('result').innerHTML = '';
+        $('idx').textContent = list.length; $('total').textContent = list.length;
+        return;
+      }
+      current = list[cursor]; awaitingNext = false;
+
+      $('idx').textContent = cursor+1;
+      $('total').textContent = list.length;
+
+      $('qtext').textContent = current.question || '—';
+      if(current.image_url){
+        $('qimg').src = current.image_url;
+        $('qimgWrap').hidden = false;
+      }else{
+        $('qimgWrap').hidden = true;
+      }
+
+      $('answer').value = '';
+      $('answer').focus();
+      $('result').innerHTML = '';
+    }
+
+    function check(ans,q){
+      const gold = normalize(q.answer);
+      if(ans===gold) return true;
+      const alts = (q.alt_answers||'').split('|').map(normalize).filter(Boolean);
+      return alts.includes(ans);
+    }
+
+    function judge(){
+      if(awaitingNext){ cursor++; render(); return; }
+      const ans = normalize($('answer').value);
+      const ok  = check(ans,current);
+
+      const answered = getSet(kAnswered(subject));
+      const wrong    = getSet(kWrong(subject));
+      answered.add(String(current.id));
+
+      if(ok){
+        $('result').innerHTML = "<span style='color:#c9f7a0'>正解！</span>";
+        wrong.delete(String(current.id));
+        setPoints(getPoints()+1);
+      }else{
+        $('result').innerHTML = `<span style="color:#ffd1d1">不正解… 正: <span class="kbd">${current.answer}</span></span>`;
+        wrong.add(String(current.id));
+      }
+      saveSet(kAnswered(subject), answered);
+      saveSet(kWrong(subject), wrong);
+
+      awaitingNext = true;
+    }
+
+    // ========= イベント =========
+    $('judgeBtn').onclick = judge;
+    $('skipBtn').onclick  = ()=>{ cursor++; render(); };
+    $('exitBtn').onclick  = ()=>{ location.href = 'subject.html?name=' + encodeURIComponent(subject); };
+
+    $('answer').addEventListener('keydown', (e)=>{
+      if(e.key==='Enter' && !e.isComposing){ judge(); }
+    });
+
+    // ========= 起動 =========
+    (async ()=>{
+      try{
+        questions = await fetchSheetTab(subject);
+        list = buildPool(questions);
+        $('total').textContent = list.length;
+        render();
+      }catch(e){
+        console.error(e);
+        alert('読み込みに失敗しました。公開設定とシートIDをご確認ください。');
+      }
+    })();
+  </script>
+</body>
+</html>
