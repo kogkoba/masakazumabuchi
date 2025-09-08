@@ -85,7 +85,7 @@
     const mode    = params.get('mode') || 'all';     // all / wrongOrNew
 
     $('title').textContent = `${subject}`;
-    $('modeLabel').textContent = (mode==='all') ? '全問' : '未正解/新規';
+    $('modeLabel').textContent = (mode==='all') ? '全問' : '不正解/新規';
 
     // ========= シート読込 =========
     async function fetchSheetTab(tab){
