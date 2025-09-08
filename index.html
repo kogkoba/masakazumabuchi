@@ -4,39 +4,22 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>まぶち宿題ゲーム</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>まぶち宿題ゲーム</h1>
+  <main class="center">
+    <section class="card" aria-labelledby="title">
+      <h1 id="title">まぶち宿題ゲーム</h1>
 
-  <p>
-    正解ポイント: <span id="points">0</span>
-    <button onclick="resetPoints()">リセット</button>
-  </p>
+      <div class="counter">
+        <div class="pill">本日の獲得ポイント：<span id="points">0</span></div>
+        <button class="ghost" id="resetPoints">リセット</button>
+      </div>
 
-  <h2>科目を選んでください</h2>
-  <button>算数（全問）</button>
-  <button>算数（未正解/新規）</button><br>
-  <button>国語（全問）</button>
-  <button>国語（未正解/新規）</button><br>
-  <button>理科（全問）</button>
-  <button>理科（未正解/新規）</button><br>
-  <button>社会（全問）</button>
-  <button>社会（未正解/新規）</button>
+      <div class="hr"></div>
+      <p class="muted" style="margin:0 0 6px">科目を選んでください</p>
 
-  <script>
-    // ポイント管理（とりあえずローカルストレージ）
-    function getPoints() {
-      return localStorage.getItem("mbg_points") || 0;
-    }
-    function setPoints(v) {
-      localStorage.setItem("mbg_points", v);
-      document.getElementById("points").textContent = v;
-    }
-    function resetPoints() {
-      setPoints(0);
-    }
-    // 初期表示
-    setPoints(getPoints());
-  </script>
-</body>
-</html>
+      <div class="grid">
+        <a class="btn tile" href="subject.html?name=算数"><span>算数</span></a>
+        <a class="btn tile" href="subject.html?name=国語"><span>国語</span></a>
+        <a
