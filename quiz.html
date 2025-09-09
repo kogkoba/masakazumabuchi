@@ -178,7 +178,23 @@
         document.getElementById('stage').classList.add('done');
         progressEl.textContent = '';
         // 最後に残りログを送る
-        flushAnswers();
+   async function flushAnswers(){
+  if (!ANSWER_BUFFER.length) return;
+  const payload = { type:'answer', records: ANSWER_BUFFER.splice(0, ANSWER_BUFFER.length) };
+  try{
+    await fetch(LOG_ENDPOINT, {
+      method: 'POST',
+      mode: 'no-cors',                          // ← 追加
+      headers: { 'Content-Type': 'text/plain' },// ← 変更（application/json禁止）
+      body: JSON.stringify(payload),
+      keepalive: true                           // ← ページ遷移時にも頑張って送る
+    });
+  }catch(e){
+    console.warn('log failed', e);
+    // 失敗したら次回に再送できるよう戻す
+    payload.records.forEach(r => ANSWER_BUFFER.push(r));
+  }
+}
         return;
       }
       const q = pool[idx];
