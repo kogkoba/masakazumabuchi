@@ -3,212 +3,136 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>出題｜まぶち宿題ゲーム</title>
+  <title>クイズ</title>
   <link rel="stylesheet" href="style.css">
+  <script src="assets/data.js" defer></script>
 </head>
 <body>
-  <main class="center">
-    <section class="card" style="width:min(860px,92vw)">
-      <!-- ヘッダー -->
-      <div class="flex-between" style="gap:12px">
-        <h1 id="title" style="margin:0">—</h1>
-        <div class="counter">
-          <div class="pill">本日の獲得ポイント：<span id="points">0</span></div>
-          <a class="btn ghost" href="./">トップへ</a>
-        </div>
+  <main class="wrap">
+    <div class="row space">
+      <a class="back" href="subject.html?subject=social">← 戻る</a>
+      <div class="points">ポイント：<span id="pts">0</span></div>
+    </div>
+
+    <section id="stage" class="panel">
+      <div id="progress" class="muted"></div>
+      <div id="imageBox"></div>
+      <h2 id="questionText"></h2>
+
+      <input id="answerInput" class="input" placeholder="ここに答えを入力（選択肢がある場合は正解語を入力）">
+      <div class="row">
+        <button id="submit" class="primary">答える</button>
+        <button id="skip" class="ghost">わからない</button>
       </div>
-      <div class="hr"></div>
 
-      <!-- 進行表示 -->
-<div class="row" style="margin-bottom:8px">
-  <div class="pill">モード：<span id="modeLabel">—</span></div>
-  <div class="pill" id="weekPill" style="display:none">週：<span id="weekLabel"></span></div>
-  <div class="pill">問題 <span id="idx">0</span>/<span id="total">0</span></div>
-</div>
-      // モード表示の直後あたりで
-if (selectedWeekParam) {
-  document.getElementById('weekLabel').textContent = selectedWeekParam;
-  document.getElementById('weekPill').style.display = 'inline-flex';
-}
-
-
-      <!-- 画像エリア -->
-<div class="qimg-wrap" id="qimgWrap" hidden>
-  <img id="qimg" class="question-image" alt="question image">
-</div>
-
-      <!-- 問題 -->
-      <div id="qtext" class="big" style="margin:12px 0">—</div>
-
-      <!-- 回答入力 -->
-      <input id="answer" type="text"
-             placeholder="ここに入力（Enterで判定 → もう一度Enterで次へ）"
-             autocomplete="off" />
-
-      <!-- 判定表示 -->
-      <div id="result" class="muted" style="min-height:24px; margin-top:8px"></div>
-
-      <!-- 操作ボタン -->
-      <div class="row" style="margin-top:10px">
-        <button class="primary" id="judgeBtn">判定（Enter）</button>
-        <button class="ghost" id="skipBtn" title="カウントせず次へ">スキップ</button>
-        <button class="ghost" id="exitBtn">終了</button>
-      </div>
+      <div id="feedback"></div>
     </section>
   </main>
 
-  <div class="keyboard-spacer" id="spacer"></div>
-
   <script>
-    // ========= 基本ユーティリティ =========
-    const $ = (id)=>document.getElementById(id);
+    // === パラメータ ===
+    const qs = new URLSearchParams(location.search);
+    const subject = qs.get('subject') || 'social';
+    const lesson  = qs.get('lesson')  || 'all';
+    const mode    = qs.get('mode')    || 'miss_unans'; // 'all' or 'miss_unans'
 
-    // ポイント
-    const keyPoints = 'mbg_points';
-    const getPoints = ()=> +(localStorage.getItem(keyPoints)||0);
-    const setPoints = v=>{ localStorage.setItem(keyPoints,v); $('points').textContent=v };
-    setPoints(getPoints());
+    // === ポイント ===
+    const LS_POINTS_KEY = 'mb_points';
+    const ptsEl = document.getElementById('pts');
+    const getPts = () => Number(localStorage.getItem(LS_POINTS_KEY) || 0);
+    const setPts = v => { localStorage.setItem(LS_POINTS_KEY, String(v)); ptsEl.textContent = v; };
+    setPts(getPts());
 
-    // 固定シートID（こぐれさんのシート）
-    const SHEET_ID = "1ldp5wandrWwB0GVfB9qP9i6qAoGqRz0D6tzDIb7FXJ8";
-
-    // 進捗（科目ごと）
-    const progressKeyBase = (sub)=> `mbg_${SHEET_ID}_${sub}`;
-    const kAnswered = (sub)=> progressKeyBase(sub)+':answered';
-    const kWrong    = (sub)=> progressKeyBase(sub)+':wrong';
-    const getSet = (k)=> new Set(JSON.parse(localStorage.getItem(k)||'[]'));
-    const saveSet = (k,s)=> localStorage.setItem(k, JSON.stringify([...s]));
-
-    // 正規化（全角→半角・空白除去）
-    const normalize = (s)=> (s||'').toString().trim()
-      .replace(/\s+/g,'')
-      .replace(/[Ａ-Ｚａ-ｚ０-９]/g, ch => String.fromCharCode(ch.charCodeAt(0)-0xFEE0));
-
-    const shuffle = (arr)=>{ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]] } return arr; };
-
-    // ========= パラメータ =========
-  // 既存：
-const params  = new URLSearchParams(location.search);
-const subject = params.get('subject') || '算数';
-const mode    = params.get('mode') || 'all';
-
-// 追加：
-const selectedWeekParam = params.get('week'); // 例: G4-J35 / G4-C35 / など
-
-
-    $('title').textContent = `${subject}`;
-    $('modeLabel').textContent = (mode==='all') ? '全問' : '不正解/新規';
-
-    // ========= シート読込 =========
-    async function fetchSheetTab(tab){
-      const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tab)}`;
-      const res = await fetch(url);
-      const txt = await res.text();
-      const json = JSON.parse(txt.match(/google\.visualization\.Query\.setResponse\((.*)\);?/s)[1]);
-      const rows = json.table.rows;
-      const cols = json.table.cols.map(c=>c.label||c.id);
-      return rows.map(r=>{
-        const obj={}; cols.forEach((c,i)=>{ obj[c] = r.c[i]? (r.c[i].v??'') : '' });
-        return obj;
-      });
+    // === 問題データ読み込み（assets/data.js の索引から JSON を fetch） ===
+    async function loadQuestions() {
+      const index = (window.DATA && window.DATA[subject]) || { lessons: [] };
+      let files = [];
+      if (lesson === 'all') files = index.lessons.map(l => l.file);
+      else {
+        const hit = index.lessons.find(l => l.id === lesson);
+        if (hit) files = [hit.file];
+      }
+      // まとめ読み
+      let all = [];
+      for (const f of files) {
+        const res = await fetch(f);
+        const arr = await res.json();
+        all = all.concat(arr);
+      }
+      return all;
     }
 
-    // ========= 出題ロジック =========
-    let questions = [], list = [], cursor = 0, current = null, awaitingNext = false;
+    // === ステータス管理 ===
+    // key: mb_status_<qid> = 'correct' | 'incorrect' （未回答はキー無し）
+    const statusKey = (qid) => `mb_status_${qid}`;
+    const getStatus = (qid) => localStorage.getItem(statusKey(qid));
+    const setStatus = (qid, s) => localStorage.setItem(statusKey(qid), s);
 
-    function buildPool(rows){
-  const answered = getSet(kAnswered(subject));
-  const wrong    = getSet(kWrong(subject));
+    // === 出題 ===
+    const progressEl = document.getElementById('progress');
+    const qTextEl = document.getElementById('questionText');
+    const imgBox = document.getElementById('imageBox');
+    const inputEl = document.getElementById('answerInput');
+    const submitBtn = document.getElementById('submit');
+    const skipBtn = document.getElementById('skip');
+    const feedbackEl = document.getElementById('feedback');
 
-  let pool = rows
-    // enabled=TRUE
-    .filter(q => (q.enabled===true || String(q.enabled).toUpperCase()==='TRUE'))
-    // WEEKフィルタ（パラメータがあれば一致のみ）
-    .filter(q => selectedWeekParam ? String(q.week||'') === selectedWeekParam : true);
+    let pool = [];
+    let idx = 0;
 
-  if (mode==='wrongOrNew'){
-    pool = pool.filter(q => wrong.has(String(q.id)) || !answered.has(String(q.id)));
-  }
-  return shuffle(pool);
-}
+    function norm(s){ return (s||'').trim().replace(/\s+/g,''); }
 
-    function render(){
-      if(cursor>=list.length){
-        $('qimgWrap').hidden = true;
-        $('qtext').textContent = 'おつかれさま！出題は終了です。';
-        $('answer').value = ''; $('answer').blur();
-        $('result').innerHTML = '';
-        $('idx').textContent = list.length; $('total').textContent = list.length;
+    function render() {
+      if (idx >= pool.length) {
+        qTextEl.textContent = '本日の出題は以上です！';
+        imgBox.innerHTML = '';
+        document.getElementById('stage').classList.add('done');
         return;
       }
-      current = list[cursor]; awaitingNext = false;
+      const q = pool[idx];
+      progressEl.textContent = `問題 ${idx+1} / ${pool.length}`;
+      qTextEl.textContent = q.text;
+      imgBox.innerHTML = q.image ? `<img class="qimg" src="${q.image}" alt="">` : '';
+      inputEl.value = '';
+      inputEl.focus();
+      feedbackEl.textContent = '';
+    }
 
-      $('idx').textContent = cursor+1;
-      $('total').textContent = list.length;
+    function advance() { idx++; render(); }
 
-      $('qtext').textContent = current.question || '—';
-      if(current.image_url){
-        $('qimg').src = current.image_url;
-        $('qimgWrap').hidden = false;
-      }else{
-        $('qimgWrap').hidden = true;
+    submitBtn.addEventListener('click', () => {
+      const q = pool[idx];
+      const user = norm(inputEl.value);
+      if (!user) { inputEl.focus(); return; }
+      const ok = (q.accept || []).some(a => norm(a) === user);
+      if (ok) {
+        setStatus(q.id, 'correct');
+        setPts(getPts() + 1);
+        feedbackEl.innerHTML = `<div class="ok">正解！ +1pt</div>`;
+        setTimeout(advance, 600);
+      } else {
+        setStatus(q.id, 'incorrect');
+        feedbackEl.innerHTML = `<div class="ng">不正解… 正答：${q.accept[0]}</div>`;
       }
-
-      $('answer').value = '';
-      $('answer').focus();
-      $('result').innerHTML = '';
-    }
-
-    function check(ans,q){
-      const gold = normalize(q.answer);
-      if(ans===gold) return true;
-      const alts = (q.alt_answers||'').split('|').map(normalize).filter(Boolean);
-      return alts.includes(ans);
-    }
-
-    function judge(){
-      if(awaitingNext){ cursor++; render(); return; }
-      const ans = normalize($('answer').value);
-      const ok  = check(ans,current);
-
-      const answered = getSet(kAnswered(subject));
-      const wrong    = getSet(kWrong(subject));
-      answered.add(String(current.id));
-
-      if(ok){
-        $('result').innerHTML = "<span style='color:#c9f7a0'>正解！</span>";
-        wrong.delete(String(current.id));
-        setPoints(getPoints()+1);
-      }else{
-        $('result').innerHTML = `<span style="color:#ffd1d1">不正解… 正: <span class="kbd">${current.answer}</span></span>`;
-        wrong.add(String(current.id));
-      }
-      saveSet(kAnswered(subject), answered);
-      saveSet(kWrong(subject), wrong);
-
-      awaitingNext = true;
-    }
-
-    // ========= イベント =========
-    $('judgeBtn').onclick = judge;
-    $('skipBtn').onclick  = ()=>{ cursor++; render(); };
-    $('exitBtn').onclick  = ()=>{ location.href = 'subject.html?name=' + encodeURIComponent(subject); };
-
-    $('answer').addEventListener('keydown', (e)=>{
-      if(e.key==='Enter' && !e.isComposing){ judge(); }
     });
 
-    // ========= 起動 =========
-    (async ()=>{
-      try{
-        questions = await fetchSheetTab(subject);
-        list = buildPool(questions);
-        $('total').textContent = list.length;
-        render();
-      }catch(e){
-        console.error(e);
-        alert('読み込みに失敗しました。公開設定とシートIDをご確認ください。');
+    skipBtn.addEventListener('click', () => {
+      const q = pool[idx];
+      // 未回答はステータス付けずに次へ
+      feedbackEl.innerHTML = `<div class="hint">スキップしました（未回答）</div>`;
+      setTimeout(advance, 300);
+    });
+
+    (async function init(){
+      const all = await loadQuestions();
+      // フィルタ：不正解＆未回答
+      if (mode === 'miss_unans') {
+        pool = all.filter(q => (getStatus(q.id) !== 'correct'));
+      } else {
+        pool = all.slice();
       }
+      // 並び替え（固定）
+      render();
     })();
   </script>
 </body>
