@@ -11,11 +11,11 @@
     <h1>まぶち勉強クイズ</h1>
 
     <section class="panel">
-      <div class="row">
+      <div class="row space">
         <div>本日獲得ポイント：<span id="points">0</span></div>
         <button id="reset" class="ghost">リセット</button>
       </div>
-      <small class="muted">※ポイントは手動リセット式（localStorage保存）</small>
+      <small class="muted">※ポイントは端末内（localStorage）に保存されます</small>
     </section>
 
     <section class="panel">
@@ -30,17 +30,14 @@
   </main>
 
   <script>
-    const LS_POINTS_KEY = 'mb_points';
-    const pointsEl = document.getElementById('points');
+    const KEY = 'mb_points';
+    const ptsEl = document.getElementById('points');
     const resetBtn = document.getElementById('reset');
-    const current = Number(localStorage.getItem(LS_POINTS_KEY) || 0);
-    pointsEl.textContent = current;
-
+    const get = () => Number(localStorage.getItem(KEY) || 0);
+    const set = v => { localStorage.setItem(KEY, String(v)); ptsEl.textContent = v; };
+    set(get());
     resetBtn.addEventListener('click', () => {
-      if (confirm('ポイントを0にしますか？')) {
-        localStorage.setItem(LS_POINTS_KEY, '0');
-        pointsEl.textContent = '0';
-      }
+      if (confirm('ポイントを0にしますか？')) set(0);
     });
   </script>
 </body>
