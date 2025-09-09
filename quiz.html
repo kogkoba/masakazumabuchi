@@ -196,6 +196,72 @@
 
     function advance(){ idx++; render(); }
 
+    // ===== ボタン操作 =====
+    document.getElementById('submit').addEventListener('click', () => {
+      const q = pool[idx];
+      const user = normalize(inputEl.value);
+      if (!user){ inputEl.focus(); return; }
+      const ok = (q.accept || []).some(a => normalize(a) === user);
+      if (ok){
+        setStatus(q.id, 'correct');
+        setPts(getPts()+1);
+        feedbackEl.innerHTML = `<div class="ok">正解！ +1pt</div>`;
+        setTimeout(advance, 600);
+      }else{
+        setStatus(q.id, 'incorrect');
+        const first = q.accept?.[0] || '';
+        feedbackEl.innerHTML = `<div class="ng">不正解… 正答例：${first}</div>`;
+      }
+    });
+
+    document.getElementById('skip').addEventListener('click', () => {
+      feedbackEl.innerHTML = `<div class="hint">スキップ（未回答）</div>`;
+      setTimeout(advance, 300);
+    });
+
+    // ===== エンターキー操作 =====
+    let answered = false;
+
+    function judge(){
+      const q = pool[idx];
+      const user = normalize(inputEl.value);
+      if (!user){ inputEl.focus(); return; }
+      const ok = (q.accept || []).some(a => normalize(a) === user);
+      if (ok){
+        setStatus(q.id, 'correct');
+        setPts(getPts()+1);
+        feedbackEl.innerHTML = `<div class="ok">正解！ +1pt</div>`;
+      }else{
+        setStatus(q.id, 'incorrect');
+        const first = q.accept?.[0] || '';
+        feedbackEl.innerHTML = `<div class="ng">不正解… 正答例：${first}</div>`;
+      }
+      answered = true;
+    }
+
+    document.getElementById('submit').addEventListener('click', () => {
+      if (!answered){ judge(); }
+    });
+
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Enter'){
+        e.preventDefault();
+        if (!answered){
+          judge();
+        } else {
+          advance();
+          answered = false;
+        }
+      }
+    });
+
+    // ===== 初期化処理 =====
+    (async function init(){
+      try{
+        const all = await loadQuestions();
+        ...
+
+
     document.getElementById('submit').addEventListener('click', () => {
       const q = pool[idx];
       const user = normalize(inputEl.value);
@@ -236,6 +302,7 @@
         qTextEl.textContent = '問題の読み込みに失敗しました。共有設定またはURLをご確認ください。';
         console.error(e);
       }
+      
     })();
   </script>
 </body>
