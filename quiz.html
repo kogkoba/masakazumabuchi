@@ -1,139 +1,35 @@
-<!doctype html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>クイズ</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="assets/data.js" defer></script>
-</head>
-<body>
-  <main class="wrap">
-    <div class="row space">
-      <a class="back" href="subject.html?subject=social">← 戻る</a>
-      <div class="points">ポイント：<span id="pts">0</span></div>
-    </div>
+function rowsToQuestions(rows){
+  const header = rows[0].map(h => h.trim());
+  const idx = (name) => header.indexOf(name);
 
-    <section id="stage" class="panel">
-      <div id="progress" class="muted"></div>
-      <div id="imageBox"></div>
-      <h2 id="questionText"></h2>
+  const qi = {
+    id: idx('id'),
+    question: idx('question'),
+    answer: idx('answer'),
+    alt: idx('alt_answers'),
+    img: idx('image_url'),
+    enabled: idx('enabled')
+  };
 
-      <input id="answerInput" class="input" placeholder="ここに答えを入力（選択肢がある場合は正解語を入力）">
-      <div class="row">
-        <button id="submit" class="primary">答える</button>
-        <button id="skip" class="ghost">わからない</button>
-      </div>
+  const out = [];
+  for (let r=1; r<rows.length; r++){
+    const row = rows[r];
+    if (!row[qi.id] || !row[qi.question]) continue;
+    if (row[qi.enabled] && row[qi.enabled].toUpperCase() === "FALSE") continue;
 
-      <div id="feedback"></div>
-    </section>
-  </main>
-
-  <script>
-    // === パラメータ ===
-    const qs = new URLSearchParams(location.search);
-    const subject = qs.get('subject') || 'social';
-    const lesson  = qs.get('lesson')  || 'all';
-    const mode    = qs.get('mode')    || 'miss_unans'; // 'all' or 'miss_unans'
-
-    // === ポイント ===
-    const LS_POINTS_KEY = 'mb_points';
-    const ptsEl = document.getElementById('pts');
-    const getPts = () => Number(localStorage.getItem(LS_POINTS_KEY) || 0);
-    const setPts = v => { localStorage.setItem(LS_POINTS_KEY, String(v)); ptsEl.textContent = v; };
-    setPts(getPts());
-
-    // === 問題データ読み込み（assets/data.js の索引から JSON を fetch） ===
-    async function loadQuestions() {
-      const index = (window.DATA && window.DATA[subject]) || { lessons: [] };
-      let files = [];
-      if (lesson === 'all') files = index.lessons.map(l => l.file);
-      else {
-        const hit = index.lessons.find(l => l.id === lesson);
-        if (hit) files = [hit.file];
-      }
-      // まとめ読み
-      let all = [];
-      for (const f of files) {
-        const res = await fetch(f);
-        const arr = await res.json();
-        all = all.concat(arr);
-      }
-      return all;
+    const accepts = [];
+    if (row[qi.answer]) accepts.push(row[qi.answer].trim());
+    if (row[qi.alt]) {
+      accepts.push(...row[qi.alt].split('|').map(s => s.trim()));
     }
 
-    // === ステータス管理 ===
-    // key: mb_status_<qid> = 'correct' | 'incorrect' （未回答はキー無し）
-    const statusKey = (qid) => `mb_status_${qid}`;
-    const getStatus = (qid) => localStorage.getItem(statusKey(qid));
-    const setStatus = (qid, s) => localStorage.setItem(statusKey(qid), s);
-
-    // === 出題 ===
-    const progressEl = document.getElementById('progress');
-    const qTextEl = document.getElementById('questionText');
-    const imgBox = document.getElementById('imageBox');
-    const inputEl = document.getElementById('answerInput');
-    const submitBtn = document.getElementById('submit');
-    const skipBtn = document.getElementById('skip');
-    const feedbackEl = document.getElementById('feedback');
-
-    let pool = [];
-    let idx = 0;
-
-    function norm(s){ return (s||'').trim().replace(/\s+/g,''); }
-
-    function render() {
-      if (idx >= pool.length) {
-        qTextEl.textContent = '本日の出題は以上です！';
-        imgBox.innerHTML = '';
-        document.getElementById('stage').classList.add('done');
-        return;
-      }
-      const q = pool[idx];
-      progressEl.textContent = `問題 ${idx+1} / ${pool.length}`;
-      qTextEl.textContent = q.text;
-      imgBox.innerHTML = q.image ? `<img class="qimg" src="${q.image}" alt="">` : '';
-      inputEl.value = '';
-      inputEl.focus();
-      feedbackEl.textContent = '';
-    }
-
-    function advance() { idx++; render(); }
-
-    submitBtn.addEventListener('click', () => {
-      const q = pool[idx];
-      const user = norm(inputEl.value);
-      if (!user) { inputEl.focus(); return; }
-      const ok = (q.accept || []).some(a => norm(a) === user);
-      if (ok) {
-        setStatus(q.id, 'correct');
-        setPts(getPts() + 1);
-        feedbackEl.innerHTML = `<div class="ok">正解！ +1pt</div>`;
-        setTimeout(advance, 600);
-      } else {
-        setStatus(q.id, 'incorrect');
-        feedbackEl.innerHTML = `<div class="ng">不正解… 正答：${q.accept[0]}</div>`;
-      }
+    out.push({
+      id: row[qi.id].trim(),
+      text: row[qi.question].trim(),
+      image: row[qi.img] ? row[qi.img].trim() : '',
+      type: 'typing',
+      accept: accepts
     });
-
-    skipBtn.addEventListener('click', () => {
-      const q = pool[idx];
-      // 未回答はステータス付けずに次へ
-      feedbackEl.innerHTML = `<div class="hint">スキップしました（未回答）</div>`;
-      setTimeout(advance, 300);
-    });
-
-    (async function init(){
-      const all = await loadQuestions();
-      // フィルタ：不正解＆未回答
-      if (mode === 'miss_unans') {
-        pool = all.filter(q => (getStatus(q.id) !== 'correct'));
-      } else {
-        pool = all.slice();
-      }
-      // 並び替え（固定）
-      render();
-    })();
-  </script>
-</body>
-</html>
+  }
+  return out;
+}
