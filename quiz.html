@@ -80,9 +80,14 @@
     const shuffle = (arr)=>{ for(let i=arr.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [arr[i],arr[j]]=[arr[j],arr[i]] } return arr; };
 
     // ========= パラメータ =========
-    const params  = new URLSearchParams(location.search);
-    const subject = params.get('subject') || '算数'; // タブ名
-    const mode    = params.get('mode') || 'all';     // all / wrongOrNew
+  // 既存：
+const params  = new URLSearchParams(location.search);
+const subject = params.get('subject') || '算数';
+const mode    = params.get('mode') || 'all';
+
+// 追加：
+const selectedWeekParam = params.get('week'); // 例: G4-J35 / G4-C35 / など
+
 
     $('title').textContent = `${subject}`;
     $('modeLabel').textContent = (mode==='all') ? '全問' : '不正解/新規';
