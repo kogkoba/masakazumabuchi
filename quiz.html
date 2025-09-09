@@ -25,6 +25,12 @@
   <div class="pill" id="weekPill" style="display:none">週：<span id="weekLabel"></span></div>
   <div class="pill">問題 <span id="idx">0</span>/<span id="total">0</span></div>
 </div>
+      // モード表示の直後あたりで
+if (selectedWeekParam) {
+  document.getElementById('weekLabel').textContent = selectedWeekParam;
+  document.getElementById('weekPill').style.display = 'inline-flex';
+}
+
 
       <!-- 画像エリア -->
 <div class="qimg-wrap" id="qimgWrap" hidden>
@@ -111,14 +117,20 @@ const selectedWeekParam = params.get('week'); // 例: G4-J35 / G4-C35 / など
     let questions = [], list = [], cursor = 0, current = null, awaitingNext = false;
 
     function buildPool(rows){
-      const answered = getSet(kAnswered(subject));
-      const wrong    = getSet(kWrong(subject));
-      let pool = rows.filter(q => (q.enabled===true || String(q.enabled).toUpperCase()==='TRUE'));
-      if(mode==='wrongOrNew'){
-        pool = pool.filter(q => wrong.has(String(q.id)) || !answered.has(String(q.id)));
-      }
-      return shuffle(pool);
-    }
+  const answered = getSet(kAnswered(subject));
+  const wrong    = getSet(kWrong(subject));
+
+  let pool = rows
+    // enabled=TRUE
+    .filter(q => (q.enabled===true || String(q.enabled).toUpperCase()==='TRUE'))
+    // WEEKフィルタ（パラメータがあれば一致のみ）
+    .filter(q => selectedWeekParam ? String(q.week||'') === selectedWeekParam : true);
+
+  if (mode==='wrongOrNew'){
+    pool = pool.filter(q => wrong.has(String(q.id)) || !answered.has(String(q.id)));
+  }
+  return shuffle(pool);
+}
 
     function render(){
       if(cursor>=list.length){
