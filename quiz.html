@@ -239,25 +239,39 @@
     });
 
     // ===== 初期化 =====
-    (async function init(){
-      try{
-        const all = await loadQuestions();
-        pool = (mode === 'miss_unans')
-          ? all.filter(q => getStatus(q.id) !== 'correct')
-          : all.slice();
+(async function init(){
+  try{
+    const all = await loadQuestions();
+    pool = (mode === 'miss_unans')
+      ? all.filter(q => getStatus(q.id) !== 'correct')
+      : all.slice();
 
-        if (!pool.length){
-          qTextEl.textContent = '出題対象がありません（条件に合う問題がない／全問正解など）';
-          imgBox.innerHTML = '';
-          document.getElementById('stage').classList.add('done');
-          return;
-        }
-        render();
-      }catch(e){
-        qTextEl.textContent = '問題の読み込みに失敗しました。共有設定またはURLをご確認ください。';
-        console.error(e);
+    // ===== 並び替え処理 =====
+    const order = qs.get('order') || 'normal';
+    if (order === 'random') {
+      // シャッフル
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
       }
-    })();
+    } else if (order === 'desc') {
+      // idを降順ソート（idが G4C0001 形式なら文字列でもOK）
+      pool.sort((a, b) => (b.id > a.id ? 1 : -1));
+    }
+    // ======================
+
+    if (!pool.length){
+      qTextEl.textContent = '出題対象がありません（条件に合う問題がない／全問正解など）';
+      imgBox.innerHTML = '';
+      document.getElementById('stage').classList.add('done');
+      return;
+    }
+    render();
+  }catch(e){
+    qTextEl.textContent = '問題の読み込みに失敗しました。共有設定またはURLをご確認ください。';
+    console.error(e);
+  }
+})();
   </script>
 </body>
 </html>
