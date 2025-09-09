@@ -4,9 +4,9 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>クイズ</title>
-<link rel="stylesheet" href="style.css">
-<script src="assets/data.js"></script>  <!-- ← defer を外す -->
-
+  <link rel="stylesheet" href="style.css">
+  <!-- data.js は同期読み込み（deferなし）-->
+  <script src="assets/data.js"></script>
 </head>
 <body>
   <main class="wrap">
@@ -167,6 +167,7 @@
     // ===== 出題 =====
     let pool = [];
     let idx = 0;
+    let answered = false; // ← 追加：判定済みか
 
     function normalize(s){
       return (s||'')
@@ -187,41 +188,16 @@
       const q = pool[idx];
       progressEl.textContent = `問題 ${idx+1} / ${pool.length}`;
       qTextEl.textContent = q.text;   // weekは非表示
-
       imgBox.innerHTML = q.image ? `<img class="qimg" src="${q.image}" alt="">` : '';
       inputEl.value = '';
+      answered = false;      // ← 新しい問題になったので未判定に戻す
       inputEl.focus();
       feedbackEl.textContent = '';
     }
 
     function advance(){ idx++; render(); }
 
-    // ===== ボタン操作 =====
-    document.getElementById('submit').addEventListener('click', () => {
-      const q = pool[idx];
-      const user = normalize(inputEl.value);
-      if (!user){ inputEl.focus(); return; }
-      const ok = (q.accept || []).some(a => normalize(a) === user);
-      if (ok){
-        setStatus(q.id, 'correct');
-        setPts(getPts()+1);
-        feedbackEl.innerHTML = `<div class="ok">正解！ +1pt</div>`;
-        setTimeout(advance, 600);
-      }else{
-        setStatus(q.id, 'incorrect');
-        const first = q.accept?.[0] || '';
-        feedbackEl.innerHTML = `<div class="ng">不正解… 正答例：${first}</div>`;
-      }
-    });
-
-    document.getElementById('skip').addEventListener('click', () => {
-      feedbackEl.innerHTML = `<div class="hint">スキップ（未回答）</div>`;
-      setTimeout(advance, 300);
-    });
-
-    // ===== エンターキー操作 =====
-    let answered = false;
-
+    // ===== 判定処理（クリック/Enter共通） =====
     function judge(){
       const q = pool[idx];
       const user = normalize(inputEl.value);
@@ -239,51 +215,30 @@
       answered = true;
     }
 
+    // ===== ボタン操作 =====
     document.getElementById('submit').addEventListener('click', () => {
-      if (!answered){ judge(); }
-    });
-
-    document.addEventListener('keydown', e => {
-      if (e.key === 'Enter'){
-        e.preventDefault();
-        if (!answered){
-          judge();
-        } else {
-          advance();
-          answered = false;
-        }
-      }
-    });
-
-    // ===== 初期化処理 =====
-    (async function init(){
-      try{
-        const all = await loadQuestions();
-        ...
-
-
-    document.getElementById('submit').addEventListener('click', () => {
-      const q = pool[idx];
-      const user = normalize(inputEl.value);
-      if (!user){ inputEl.focus(); return; }
-      const ok = (q.accept || []).some(a => normalize(a) === user);
-      if (ok){
-        setStatus(q.id, 'correct');
-        setPts(getPts()+1);
-        feedbackEl.innerHTML = `<div class="ok">正解！ +1pt</div>`;
-        setTimeout(advance, 600);
-      }else{
-        setStatus(q.id, 'incorrect');
-        const first = q.accept?.[0] || '';
-        feedbackEl.innerHTML = `<div class="ng">不正解… 正答例：${first}</div>`;
-      }
+      if (!answered){ judge(); } else { advance(); }
     });
 
     document.getElementById('skip').addEventListener('click', () => {
       feedbackEl.innerHTML = `<div class="hint">スキップ（未回答）</div>`;
-      setTimeout(advance, 300);
+      answered = true; // Enterでも次へ行けるように
+      setTimeout(advance, 200);
     });
 
+    // ===== エンターキー操作 =====
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Enter'){
+        e.preventDefault();
+        if (!answered){
+          judge();             // 1回目のEnter：判定
+        } else {
+          advance();           // 2回目のEnter：次へ
+        }
+      }
+    });
+
+    // ===== 初期化 =====
     (async function init(){
       try{
         const all = await loadQuestions();
@@ -302,7 +257,6 @@
         qTextEl.textContent = '問題の読み込みに失敗しました。共有設定またはURLをご確認ください。';
         console.error(e);
       }
-      
     })();
   </script>
 </body>
