@@ -35,6 +35,8 @@
     const subject = qs.get('subject') || 'social';
     const lesson  = qs.get('lesson')  || '';
     const mode    = qs.get('mode')    || 'miss_unans';
+    const scope   = qs.get('scope')   || 'all';           // 'all' | 'week'
+    const weekReq = qs.get('week')    || '';              // 例: 'G4-C00'
     document.getElementById('back').href = `subject.html?subject=${encodeURIComponent(subject)}`;
 
     // ===== ポイント =====
@@ -58,7 +60,7 @@
     const skipBtn = document.getElementById('skip');
     const feedbackEl = document.getElementById('feedback');
 
-    // ===== CSVパーサ（軽量） =====
+    // ===== CSVパーサ =====
     function parseCSV(text){
       const rows = [];
       let cur = [], cell = '', inQuote = false;
@@ -80,12 +82,20 @@
       return rows;
     }
 
+    async function fetchCSV(url){
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('CSV fetch failed');
+      const text = await res.text();
+      return parseCSV(text);
+    }
+
     function rowsToQuestions(rows){
       if (!rows.length) return [];
       const header = rows[0].map(h => h.trim());
       const idx = name => header.indexOf(name);
       const qi = {
         id: idx('id'),
+        week: idx('week'),
         question: idx('question'),
         answer: idx('answer'),
         alt: idx('alt_answers'),
@@ -96,7 +106,7 @@
       for (let r=1; r<rows.length; r++){
         const row = rows[r];
         if (!row[qi.id] || !row[qi.question]) continue;
-        // enabled が FALSE の行はスキップ（空欄/TRUE/true は出題）
+        // enabled=FALSE は除外
         const enabled = (row[qi.enabled] || '').toString().trim().toUpperCase();
         if (enabled === 'FALSE') continue;
 
@@ -107,6 +117,7 @@
         out.push({
           id: row[qi.id].trim(),
           text: row[qi.question].trim(),
+          week: row[qi.week]?.trim() || '',
           image: row[qi.img]?.trim() || '',
           type: 'typing',
           accept: accepts
@@ -115,22 +126,14 @@
       return out;
     }
 
-    async function fetchCSV(url){
-      const res = await fetch(url, { cache: 'no-store' });
-      if (!res.ok) throw new Error('CSV fetch failed');
-      const text = await res.text();
-      return parseCSV(text);
-    }
-
     async function loadQuestions(){
       const index = (window.DATA && window.DATA[subject]) || { lessons: [] };
       let targets = [];
       if (!lesson || lesson === 'all'){ targets = index.lessons; }
       else { const hit = index.lessons.find(l => l.id === lesson); if (hit) targets = [hit]; }
-
       let all = [];
       for (const t of targets){
-        const url = t.csv || t.file; // 万一JSON運用と併用する場合に備えて
+        const url = t.csv || t.file;
         if (!url) continue;
         if (/\.json($|\?)/.test(url)){
           const r = await fetch(url, { cache: 'no-store' });
@@ -141,19 +144,22 @@
           all = all.concat(rowsToQuestions(rows));
         }
       }
+      // 週フィルタ
+      if (scope === 'week' && weekReq){
+        all = all.filter(q => (q.week === weekReq));
+      }
       return all;
     }
 
-    // ===== 出題 =====
+    // ===== 出題ロジック =====
     let pool = [];
     let idx = 0;
 
     function normalize(s){
       return (s||'')
-        .toString()
-        .trim()
+        .toString().trim()
         .replace(/\s+/g,'')
-        .replace(/[ーｰ−]/g,'-') // 長音の揺れ軽減（簡易）
+        .replace(/[ーｰ−]/g,'-')
         .toLowerCase();
     }
 
@@ -167,7 +173,8 @@
       }
       const q = pool[idx];
       progressEl.textContent = `問題 ${idx+1} / ${pool.length}`;
-      qTextEl.textContent = q.text;
+      // week があれば表示
+      qTextEl.textContent = q.week ? `[${q.week}] ${q.text}` : q.text;
       imgBox.innerHTML = q.image ? `<img class="qimg" src="${q.image}" alt="">` : '';
       inputEl.value = '';
       inputEl.focus();
@@ -201,10 +208,9 @@
     (async function init(){
       try{
         const all = await loadQuestions();
-        // モード：不正解＆未回答 → 「correct」以外を出題
-        pool = (mode === 'miss_unans') ? all.filter(q => getStatus(q.id) !== 'correct') : all.slice();
+        pool = (mode === 'miss_unans') ? all.filter(q => localStorage.getItem(`mb_status_${q.id}`) !== 'correct') : all.slice();
         if (!pool.length){
-          qTextEl.textContent = '出題対象がありません（全問正解の可能性があります）';
+          qTextEl.textContent = '出題対象がありません（条件に合う問題がない／全問正解など）';
           imgBox.innerHTML = '';
           document.getElementById('stage').classList.add('done');
           return;
