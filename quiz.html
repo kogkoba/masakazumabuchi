@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>クイズ</title>
   <link rel="stylesheet" href="style.css">
-  <!-- data.js は同期読み込み（deferなし）-->
+  <!-- data.js は同期読み込み（deferなし） -->
   <script src="assets/data.js"></script>
 </head>
 <body>
@@ -31,34 +31,38 @@
   </main>
 
   <script>
-    // ===== URLパラメータ =====
+    /***** 設定：GASのWebアプリURL（あなたのURL） *****/
+    const LOG_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyPZFejTFMwWieBeZRJ15KFtNuEAYyzha6QXpKbx0Oy3SnCogfS-n86C6fDKorUKaOg/exec';
+
+    /***** URLパラメータ *****/
     const qs = new URLSearchParams(location.search);
     const subject = qs.get('subject') || 'social';
     const mode    = qs.get('mode')    || 'miss_unans';
-    const scope   = qs.get('scope')   || 'all';     // 'all' | 'week'
-    const weekReq = qs.get('week')    || '';        // 例: 'G4-C00'
+    const scope   = qs.get('scope')   || 'all';   // 'all' | 'week'
+    const weekReq = qs.get('week')    || '';
+    const order   = qs.get('order')   || 'normal'; // 'normal' | 'random' | 'desc'
     document.getElementById('back').href = `subject.html?subject=${encodeURIComponent(subject)}`;
 
-    // ===== ポイント =====
+    /***** ポイント *****/
     const KEY_PTS = 'mb_points';
     const ptsEl = document.getElementById('pts');
     const getPts = () => Number(localStorage.getItem(KEY_PTS) || 0);
     const setPts = v => { localStorage.setItem(KEY_PTS, String(v)); ptsEl.textContent = v; };
     setPts(getPts());
 
-    // ===== ステータス（正解/不正解） =====
+    /***** ステータス（正解/不正解） *****/
     const statusKey = id => `mb_status_${id}`;
     const getStatus = id => localStorage.getItem(statusKey(id));
     const setStatus = (id, v) => localStorage.setItem(statusKey(id), v);
 
-    // ===== 要素参照 =====
+    /***** 要素参照 *****/
     const progressEl = document.getElementById('progress');
     const qTextEl = document.getElementById('questionText');
     const imgBox = document.getElementById('imageBox');
     const inputEl = document.getElementById('answerInput');
     const feedbackEl = document.getElementById('feedback');
 
-    // ===== CSVパーサ =====
+    /***** CSVパーサ *****/
     function parseCSV(text){
       const rows = [];
       let cur = [], cell = '', inQuote = false;
@@ -83,16 +87,15 @@
     async function fetchCSV(url){
       const res = await fetch(url, { cache: 'no-store' });
       if (!res.ok) throw new Error('CSV fetch failed');
-      const text = await res.text();
-      return parseCSV(text);
+      return parseCSV(await res.text());
     }
 
-    // ===== CSV -> 問題配列（BOM/大文字小文字ゆれ対策） =====
+    /***** CSV -> 問題配列（BOM対策） *****/
     function rowsToQuestions(rows){
       if (!rows.length) return [];
       const header = rows[0].map(h => (h || '')
         .toString()
-        .replace(/^\ufeff/, '') // 先頭BOM除去
+        .replace(/^\ufeff/, '')
         .trim()
         .toLowerCase()
       );
@@ -112,7 +115,6 @@
       for (let r=1; r<rows.length; r++){
         const row = rows[r];
 
-        // enabled が FALSE の行は除外
         const enabled = ((qi.enabled>=0 ? row[qi.enabled] : '') || '')
           .toString().trim().toUpperCase();
         if (enabled === 'FALSE') continue;
@@ -125,10 +127,7 @@
         const ans = (qi.answer>=0 ? row[qi.answer] : '').toString().trim();
         const alt = (qi.alt>=0 ? row[qi.alt] : '').toString();
         if (ans) accepts.push(ans);
-        if (alt) {
-          // 半角| と 全角｜ の両方OK
-          alt.split(/[|｜]/).map(s=>s.trim()).filter(Boolean).forEach(s=>accepts.push(s));
-        }
+        if (alt) alt.split(/[|｜]/).map(s=>s.trim()).filter(Boolean).forEach(s=>accepts.push(s));
 
         out.push({
           id,
@@ -156,7 +155,6 @@
           all = all.concat(rowsToQuestions(rows));
         }
       }
-      // 週フィルタ（scope=weekのときだけ）
       if (scope === 'week' && weekReq){
         const want = weekReq.trim();
         all = all.filter(q => (q.week || '').trim() === want);
@@ -164,17 +162,13 @@
       return all;
     }
 
-    // ===== 出題 =====
+    /***** 出題 *****/
     let pool = [];
     let idx = 0;
-    let answered = false; // ← 追加：判定済みか
+    let answered = false;
 
     function normalize(s){
-      return (s||'')
-        .toString().trim()
-        .replace(/\s+/g,'')
-        .replace(/[ーｰ−]/g,'-')
-        .toLowerCase();
+      return (s||'').toString().trim().replace(/\s+/g,'').replace(/[ーｰ−]/g,'-').toLowerCase();
     }
 
     function render(){
@@ -183,26 +177,100 @@
         imgBox.innerHTML = '';
         document.getElementById('stage').classList.add('done');
         progressEl.textContent = '';
+        // 最後に残りログを送る
+        flushAnswers();
         return;
       }
       const q = pool[idx];
       progressEl.textContent = `問題 ${idx+1} / ${pool.length}`;
-      qTextEl.textContent = q.text;   // weekは非表示
+      qTextEl.textContent = q.text;              // week表示なし
       imgBox.innerHTML = q.image ? `<img class="qimg" src="${q.image}" alt="">` : '';
       inputEl.value = '';
-      answered = false;      // ← 新しい問題になったので未判定に戻す
+      answered = false;
       inputEl.focus();
       feedbackEl.textContent = '';
     }
 
     function advance(){ idx++; render(); }
 
-    // ===== 判定処理（クリック/Enter共通） =====
+    /***** ログ（GAS送信） *****/
+    // 匿名ユーザーID
+    const USER_ID_KEY = 'mb_user_id';
+    function getUserId(){
+      let id = localStorage.getItem(USER_ID_KEY);
+      if (!id){
+        id = 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+        localStorage.setItem(USER_ID_KEY, id);
+      }
+      return id;
+    }
+    // セッションID
+    const SESSION_ID = 's_' + Date.now().toString(36) + Math.random().toString(36).slice(2);
+
+    const ANSWER_BUFFER = [];
+    const FLUSH_EVERY = 5;
+
+    async function flushAnswers(){
+      if (!ANSWER_BUFFER.length) return;
+      // できるだけ軽く
+      const payload = { type:'answer', records: ANSWER_BUFFER.splice(0, ANSWER_BUFFER.length) };
+      try{
+        await fetch(LOG_ENDPOINT, {
+          method: 'POST',
+          headers: {'Content-Type':'application/json'},
+          body: JSON.stringify(payload)
+        });
+      }catch(e){
+        console.warn('log failed', e);
+        // 失敗したら次回に再送できるよう戻す
+        payload.records.forEach(r => ANSWER_BUFFER.push(r));
+      }
+    }
+
+    function pushAnswerLog(record){
+      ANSWER_BUFFER.push(record);
+      if (ANSWER_BUFFER.length >= FLUSH_EVERY) flushAnswers();
+    }
+
+    // ページ離脱時に残りを送る（対応していないブラウザもあるので best-effort）
+    window.addEventListener('beforeunload', () => {
+      if (!ANSWER_BUFFER.length) return;
+      const body = JSON.stringify({ type:'answer', records: ANSWER_BUFFER });
+      if (navigator.sendBeacon){
+        const blob = new Blob([body], {type:'application/json'});
+        navigator.sendBeacon(LOG_ENDPOINT, blob);
+      }else{
+        // フォールバック（完全保証ではない）
+        fetch(LOG_ENDPOINT, { method:'POST', headers:{'Content-Type':'application/json'}, body });
+      }
+    });
+
+    /***** 判定処理（クリック/Enter共通） *****/
     function judge(){
       const q = pool[idx];
-      const user = normalize(inputEl.value);
+      const userRaw = inputEl.value;
+      const user = normalize(userRaw);
       if (!user){ inputEl.focus(); return; }
       const ok = (q.accept || []).some(a => normalize(a) === user);
+
+      // ログ1件
+      pushAnswerLog({
+        ts_iso: new Date().toISOString(),
+        user_id: getUserId(),
+        session_id: SESSION_ID,
+        subject,
+        week: weekReq || '',
+        lesson_id: '',               // 必要なら data.js の id を渡す実装にもできます
+        question_id: q.id,
+        status: ok ? 'correct' : 'incorrect',
+        user_answer: userRaw,
+        is_correct: ok,
+        points_delta: ok ? 1 : 0,
+        elapsed_ms: 0,              // 必要になったら計測を追加
+        order,
+        scope
+      });
+
       if (ok){
         setStatus(q.id, 'correct');
         setPts(getPts()+1);
@@ -214,124 +282,78 @@
       }
       answered = true;
     }
-// ====== 設定 ======
-const LOG_ENDPOINT = 'https://script.google.com/macros/s/AKfycbyPZFejTFMwWieBeZRJ15KFtNuEAYyzha6QXpKbx0Oy3SnCogfS-n86C6fDKorUKaOg/exec'; // ←自分のデプロイURL
-const LOG_TOKEN = '任意の同じ文字列'; // GAS に設定した LOG_TOKEN と一致させる
 
-// 匿名ユーザーID（ブラウザごとに保持）
-const USER_ID_KEY = 'mb_user_id';
-function getUserId(){
-  let id = localStorage.getItem(USER_ID_KEY);
-  if (!id){
-    id = 'u_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
-    localStorage.setItem(USER_ID_KEY, id);
-  }
-  return id;
-}
-
-// セッションID
-const SESSION_ID = 's_' + Date.now().toString(36) + Math.random().toString(36).slice(2);
-const SESSION_START = performance.now();
-
-// バッファ
-const ANSWER_BUFFER = [];
-const FLUSH_EVERY = 5; // 5件たまったら送る
-async function flushAnswers(){
-  if (!ANSWER_BUFFER.length) return;
-  const body = {
-    token: LOG_TOKEN,
-    type: 'answer',
-    records: ANSWER_BUFFER.splice(0, ANSWER_BUFFER.length)
-  };
-  try {
-    await fetch(LOG_ENDPOINT, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    });
-  } catch(e){
-    console.warn('log send failed', e);
-    // 失敗時は次回に再送（簡易リトライ：バッファに戻す）
-    body.records.forEach(r => ANSWER_BUFFER.push(r));
-  }
-}
-
-async function sendSessionSummary(summary){
-  const body = {
-    token: LOG_TOKEN,
-    type: 'session',
-    session: summary
-  };
-  try {
-    await fetch(LOG_ENDPOINT, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify(body)
-    });
-  } catch(e){
-    console.warn('session log failed', e);
-  }
-}
-
-    
-
-    // ===== ボタン操作 =====
+    /***** ボタン操作 *****/
     document.getElementById('submit').addEventListener('click', () => {
       if (!answered){ judge(); } else { advance(); }
     });
 
     document.getElementById('skip').addEventListener('click', () => {
+      const q = pool[idx];
+      pushAnswerLog({
+        ts_iso: new Date().toISOString(),
+        user_id: getUserId(),
+        session_id: SESSION_ID,
+        subject,
+        week: weekReq || '',
+        lesson_id: '',
+        question_id: q.id,
+        status: 'skipped',
+        user_answer: '',
+        is_correct: false,
+        points_delta: 0,
+        elapsed_ms: 0,
+        order,
+        scope
+      });
+
       feedbackEl.innerHTML = `<div class="hint">スキップ（未回答）</div>`;
-      answered = true; // Enterでも次へ行けるように
+      answered = true;
       setTimeout(advance, 200);
     });
 
-    // ===== エンターキー操作 =====
+    /***** エンターキー操作 *****/
     document.addEventListener('keydown', e => {
       if (e.key === 'Enter'){
         e.preventDefault();
         if (!answered){
-          judge();             // 1回目のEnter：判定
+          judge();     // 1回目のEnter：判定
         } else {
-          advance();           // 2回目のEnter：次へ
+          advance();   // 2回目のEnter：次の問題
         }
       }
     });
 
-    // ===== 初期化 =====
-(async function init(){
-  try{
-    const all = await loadQuestions();
-    pool = (mode === 'miss_unans')
-      ? all.filter(q => getStatus(q.id) !== 'correct')
-      : all.slice();
+    /***** 初期化 *****/
+    (async function init(){
+      try{
+        const all = await loadQuestions();
+        pool = (mode === 'miss_unans')
+          ? all.filter(q => getStatus(q.id) !== 'correct')
+          : all.slice();
 
-    // ===== 並び替え処理 =====
-    const order = qs.get('order') || 'normal';
-    if (order === 'random') {
-      // シャッフル
-      for (let i = pool.length - 1; i > 0; i--) {
-        const j = Math.floor(Math.random() * (i + 1));
-        [pool[i], pool[j]] = [pool[j], pool[i]];
+        // 並び替え
+        if (order === 'random'){
+          for (let i = pool.length - 1; i > 0; i--){
+            const j = Math.floor(Math.random() * (i + 1));
+            [pool[i], pool[j]] = [pool[j], pool[i]];
+          }
+        }else if (order === 'desc'){
+          pool.sort((a,b) => (b.id > a.id ? 1 : -1));
+        }
+
+        if (!pool.length){
+          qTextEl.textContent = '出題対象がありません（条件に合う問題がない／全問正解など）';
+          imgBox.innerHTML = '';
+          document.getElementById('stage').classList.add('done');
+          return;
+        }
+        render();
+      }catch(e){
+        qTextEl.textContent = '問題の読み込みに失敗しました。共有設定またはURLをご確認ください。';
+        console.error(e);
       }
-    } else if (order === 'desc') {
-      // idを降順ソート（idが G4C0001 形式なら文字列でもOK）
-      pool.sort((a, b) => (b.id > a.id ? 1 : -1));
-    }
-    // ======================
-
-    if (!pool.length){
-      qTextEl.textContent = '出題対象がありません（条件に合う問題がない／全問正解など）';
-      imgBox.innerHTML = '';
-      document.getElementById('stage').classList.add('done');
-      return;
-    }
-    render();
-  }catch(e){
-    qTextEl.textContent = '問題の読み込みに失敗しました。共有設定またはURLをご確認ください。';
-    console.error(e);
-  }
-})();
+    })();
   </script>
 </body>
 </html>
