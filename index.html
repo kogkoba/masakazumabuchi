@@ -3,39 +3,115 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>まぶち宿題ゲーム</title>
+  <title>科目を選択</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="center">
-    <section class="card" aria-labelledby="title">
-      <h1 id="title">まぶち宿題ゲーム</h1>
+    <section class="card">
+      <h1 id="subjectTitle">科目</h1>
 
       <div class="counter">
         <div class="pill">本日の獲得ポイント：<span id="points">0</span></div>
-        <button class="ghost" id="resetPoints">リセット</button>
+        <a class="btn ghost" href="./">トップへ戻る</a>
       </div>
 
       <div class="hr"></div>
-      <p class="muted" style="margin:0 0 6px">科目を選んでください</p>
 
-      <div class="grid">
-        <a class="btn tile" href="subject.html?name=算数"><span>算数</span></a>
-        <a class="btn tile" href="subject.html?name=国語"><span>国語</span></a>
-        <a class="btn tile" href="subject.html?name=理科"><span>理科</span></a>
-        <a class="btn tile" href="subject.html?name=社会"><span>社会</span></a>
+      <!-- ブロックA：すべての回 -->
+      <p class="muted" style="margin:0 0 6px">すべての回の問題</p>
+      <div class="row" style="margin-bottom:14px">
+        <a class="btn primary" id="allAllBtn">全問</a>
+        <a class="btn ghost" id="allWrongBtn">不正解と未回答</a>
+      </div>
+
+      <div class="hr"></div>
+
+      <!-- ブロックB：選んだWEEK -->
+      <p class="muted" style="margin:0 0 6px">選んだWEEK の問題</p>
+      <div class="row" style="gap:8px; margin-bottom:8px">
+        <select id="weekSel" class="ghost" style="padding:8px 10px;border-radius:10px;background:transparent;color:#fff;outline:1px solid #43508c;min-width:200px">
+          <option value="" selected>（読み込み中…）</option>
+        </select>
+        <button class="primary" id="weekAllBtn">全問</button>
+        <button class="ghost" id="weekWrongBtn">不正解と未回答</button>
+      </div>
+
+      <div class="back">
+        <a class="btn ghost" href="./">← 科目選択に戻る</a>
       </div>
     </section>
   </main>
 
   <script>
-    // ポイント表示＆リセット
+    // ポイント表示
     const key = 'mbg_points';
-    const $ = (id)=>document.getElementById(id);
-    function getPoints(){ return +(localStorage.getItem(key) || 0); }
-    function setPoints(v){ localStorage.setItem(key, v); $('points').textContent = v; }
-    $('resetPoints').onclick = ()=>{ if(confirm('本日の獲得ポイントを0にしますか？')) setPoints(0); };
+    const $ = id => document.getElementById(id);
+    const getPoints = ()=> +(localStorage.getItem(key)||0);
+    const setPoints = v=>{ localStorage.setItem(key,v); $('points').textContent=v };
     setPoints(getPoints());
+
+    // URLから科目名
+    const params = new URLSearchParams(location.search);
+    const subject = params.get('name') || '科目';
+    $('subjectTitle').textContent = subject;
+
+    // ======== シートID =========
+    // quiz.html と同じ固定IDをここにも記載（固定運用）
+    const SHEET_ID = "1ldp5wandrWwB0GVfB9qP9i6qAoGqRz0D6tzDIb7FXJ8";
+
+    // ======== WEEK一覧を科目タブから取得してセレクトに反映 =========
+    async function fetchWeeksFromTab(tab){
+      const url = `https://docs.google.com/spreadsheets/d/${SHEET_ID}/gviz/tq?tqx=out:json&sheet=${encodeURIComponent(tab)}`;
+      const res = await fetch(url);
+      const txt = await res.text();
+      const json = JSON.parse(txt.match(/google\.visualization\.Query\.setResponse\((.*)\);?/s)[1]);
+      const rows = json.table.rows;
+      const cols = json.table.cols.map(c=>c.label||c.id);
+      const arr = rows.map(r=>{
+        const obj={}; cols.forEach((c,i)=>{ obj[c] = r.c[i]? (r.c[i].v??'') : '' });
+        return obj;
+      });
+      // 一意なweek抽出（空は除外）
+      const weeks = [...new Set(arr.map(r => (r.week||'').toString().trim()).filter(Boolean))].sort();
+      return weeks;
+    }
+
+    (async ()=>{
+      try{
+        const sel = $('weekSel');
+        sel.innerHTML = `<option value="">（WEEKを選択）</option>`;
+        const weeks = await fetchWeeksFromTab(subject);
+        if(weeks.length===0){
+          sel.innerHTML = `<option value="">（WEEKデータがありません）</option>`;
+        }else{
+          sel.innerHTML += weeks.map(w => `<option value="${w}">${w}</option>`).join('');
+        }
+      }catch(e){
+        console.error(e);
+        $('weekSel').innerHTML = `<option value="">（読み込み失敗）</option>`;
+      }
+    })();
+
+    // ======== ナビ（A: すべての回） ========
+    const to = (mode, week)=> {
+      const base = `quiz.html?subject=${encodeURIComponent(subject)}&mode=${mode}`;
+      return week ? `${base}&week=${encodeURIComponent(week)}` : base;
+    };
+    $('allAllBtn').href   = to('all', null);
+    $('allWrongBtn').href = to('wrongOrNew', null);
+
+    // ======== ナビ（B: 選んだWEEK） ========
+    $('weekAllBtn').onclick = ()=>{
+      const w = $('weekSel').value;
+      if(!w){ alert('WEEKを選んでください'); return; }
+      location.href = to('all', w);
+    };
+    $('weekWrongBtn').onclick = ()=>{
+      const w = $('weekSel').value;
+      if(!w){ alert('WEEKを選んでください'); return; }
+      location.href = to('wrongOrNew', w);
+    };
   </script>
 </body>
 </html>
