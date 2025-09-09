@@ -19,3 +19,12 @@ h1{margin:6px 0 16px}
 .hint{color:#fc9;margin-top:8px}
 .qimg{max-width:100%;border-radius:10px;display:block;margin:10px auto}
 #stage.done .row, #stage.done #answerInput{display:none}
+/* クイズ問題画像（枠内に収める） */
+.qimg {
+  max-width: 100%;      /* 横幅は画面を超えない */
+  max-height: 400px;    /* ← 縦の上限を決める（例: 400px） */
+  height: auto;         /* 縦横比は保持 */
+  display: block;
+  margin: 0 auto;       /* 中央寄せ */
+  object-fit: contain;  /* 枠からはみ出さない */
+}
