@@ -5,7 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>範囲とモードの選択</title>
   <link rel="stylesheet" href="style.css">
-  <script src="assets/data.js" defer></script>
+  <!-- 同期読み込みに変更（deferを外す） -->
+  <script src="assets/data.js"></script>
 </head>
 <body>
   <main class="wrap">
@@ -16,6 +17,9 @@
       <h2>授業回（シート）を選ぶ</h2>
       <select id="lessonSelect"></select>
       <small class="muted">※同一科目に複数のタブ/シートがある場合はここで選択</small>
+      <div id="lessonWarn" class="muted" style="margin-top:8px;display:none">
+        レッスンが見つかりません。assets/data.js の <code>window.DATA.&lt;科目&gt;.lessons</code> を確認してください。
+      </div>
     </section>
 
     <section class="panel">
@@ -38,10 +42,15 @@
 
     const data = (window.DATA && window.DATA[subject]) || { lessons: [] };
     const sel = document.getElementById('lessonSelect');
+    const warn = document.getElementById('lessonWarn');
 
     function renderLessons(){
       sel.innerHTML = '';
-      data.lessons.forEach((l, i) => {
+      if (!data.lessons || !data.lessons.length) {
+        warn.style.display = 'block';
+        return;
+      }
+      data.lessons.forEach(l => {
         const opt = document.createElement('option');
         opt.value = l.id;
         opt.textContent = l.title || l.id;
