@@ -1,35 +1,220 @@
-function rowsToQuestions(rows){
-  const header = rows[0].map(h => h.trim());
-  const idx = (name) => header.indexOf(name);
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>クイズ</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="assets/data.js" defer></script>
+</head>
+<body>
+  <main class="wrap">
+    <div class="row space">
+      <a id="back" class="back" href="subject.html">← 戻る</a>
+      <div>ポイント：<span id="pts">0</span></div>
+    </div>
 
-  const qi = {
-    id: idx('id'),
-    question: idx('question'),
-    answer: idx('answer'),
-    alt: idx('alt_answers'),
-    img: idx('image_url'),
-    enabled: idx('enabled')
-  };
+    <section id="stage" class="panel">
+      <div id="progress" class="muted"></div>
+      <div id="imageBox"></div>
+      <h2 id="questionText"></h2>
 
-  const out = [];
-  for (let r=1; r<rows.length; r++){
-    const row = rows[r];
-    if (!row[qi.id] || !row[qi.question]) continue;
-    if (row[qi.enabled] && row[qi.enabled].toUpperCase() === "FALSE") continue;
+      <input id="answerInput" class="input" placeholder="ここに答えを入力">
+      <div class="row">
+        <button id="submit" class="primary">答える</button>
+        <button id="skip" class="ghost">わからない</button>
+      </div>
 
-    const accepts = [];
-    if (row[qi.answer]) accepts.push(row[qi.answer].trim());
-    if (row[qi.alt]) {
-      accepts.push(...row[qi.alt].split('|').map(s => s.trim()));
+      <div id="feedback"></div>
+    </section>
+  </main>
+
+  <script>
+    // ===== URLパラメータ =====
+    const qs = new URLSearchParams(location.search);
+    const subject = qs.get('subject') || 'social';
+    const lesson  = qs.get('lesson')  || '';
+    const mode    = qs.get('mode')    || 'miss_unans';
+    document.getElementById('back').href = `subject.html?subject=${encodeURIComponent(subject)}`;
+
+    // ===== ポイント =====
+    const KEY_PTS = 'mb_points';
+    const ptsEl = document.getElementById('pts');
+    const getPts = () => Number(localStorage.getItem(KEY_PTS) || 0);
+    const setPts = v => { localStorage.setItem(KEY_PTS, String(v)); ptsEl.textContent = v; };
+    setPts(getPts());
+
+    // ===== ステータス（正解/不正解） =====
+    const statusKey = id => `mb_status_${id}`;
+    const getStatus = id => localStorage.getItem(statusKey(id));
+    const setStatus = (id, v) => localStorage.setItem(statusKey(id), v);
+
+    // ===== 要素参照 =====
+    const progressEl = document.getElementById('progress');
+    const qTextEl = document.getElementById('questionText');
+    const imgBox = document.getElementById('imageBox');
+    const inputEl = document.getElementById('answerInput');
+    const submitBtn = document.getElementById('submit');
+    const skipBtn = document.getElementById('skip');
+    const feedbackEl = document.getElementById('feedback');
+
+    // ===== CSVパーサ（軽量） =====
+    function parseCSV(text){
+      const rows = [];
+      let cur = [], cell = '', inQuote = false;
+      for (let i=0; i<text.length; i++){
+        const c = text[i], n = text[i+1];
+        if (inQuote){
+          if (c === '"' && n === '"'){ cell += '"'; i++; }
+          else if (c === '"'){ inQuote = false; }
+          else { cell += c; }
+        }else{
+          if (c === '"'){ inQuote = true; }
+          else if (c === ','){ cur.push(cell); cell=''; }
+          else if (c === '\n'){ cur.push(cell); rows.push(cur); cur=[]; cell=''; }
+          else if (c === '\r'){ /* skip */ }
+          else { cell += c; }
+        }
+      }
+      if (cell.length>0 || cur.length>0){ cur.push(cell); rows.push(cur); }
+      return rows;
     }
 
-    out.push({
-      id: row[qi.id].trim(),
-      text: row[qi.question].trim(),
-      image: row[qi.img] ? row[qi.img].trim() : '',
-      type: 'typing',
-      accept: accepts
+    function rowsToQuestions(rows){
+      if (!rows.length) return [];
+      const header = rows[0].map(h => h.trim());
+      const idx = name => header.indexOf(name);
+      const qi = {
+        id: idx('id'),
+        question: idx('question'),
+        answer: idx('answer'),
+        alt: idx('alt_answers'),
+        img: idx('image_url'),
+        enabled: idx('enabled')
+      };
+      const out = [];
+      for (let r=1; r<rows.length; r++){
+        const row = rows[r];
+        if (!row[qi.id] || !row[qi.question]) continue;
+        // enabled が FALSE の行はスキップ（空欄/TRUE/true は出題）
+        const enabled = (row[qi.enabled] || '').toString().trim().toUpperCase();
+        if (enabled === 'FALSE') continue;
+
+        const accepts = [];
+        if (row[qi.answer]) accepts.push(row[qi.answer].trim());
+        if (row[qi.alt]) accepts.push(...row[qi.alt].split('|').map(s=>s.trim()).filter(Boolean));
+
+        out.push({
+          id: row[qi.id].trim(),
+          text: row[qi.question].trim(),
+          image: row[qi.img]?.trim() || '',
+          type: 'typing',
+          accept: accepts
+        });
+      }
+      return out;
+    }
+
+    async function fetchCSV(url){
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('CSV fetch failed');
+      const text = await res.text();
+      return parseCSV(text);
+    }
+
+    async function loadQuestions(){
+      const index = (window.DATA && window.DATA[subject]) || { lessons: [] };
+      let targets = [];
+      if (!lesson || lesson === 'all'){ targets = index.lessons; }
+      else { const hit = index.lessons.find(l => l.id === lesson); if (hit) targets = [hit]; }
+
+      let all = [];
+      for (const t of targets){
+        const url = t.csv || t.file; // 万一JSON運用と併用する場合に備えて
+        if (!url) continue;
+        if (/\.json($|\?)/.test(url)){
+          const r = await fetch(url, { cache: 'no-store' });
+          const arr = await r.json();
+          all = all.concat(arr);
+        }else{
+          const rows = await fetchCSV(url);
+          all = all.concat(rowsToQuestions(rows));
+        }
+      }
+      return all;
+    }
+
+    // ===== 出題 =====
+    let pool = [];
+    let idx = 0;
+
+    function normalize(s){
+      return (s||'')
+        .toString()
+        .trim()
+        .replace(/\s+/g,'')
+        .replace(/[ーｰ−]/g,'-') // 長音の揺れ軽減（簡易）
+        .toLowerCase();
+    }
+
+    function render(){
+      if (idx >= pool.length){
+        qTextEl.textContent = '本日の出題は以上です！';
+        imgBox.innerHTML = '';
+        document.getElementById('stage').classList.add('done');
+        progressEl.textContent = '';
+        return;
+      }
+      const q = pool[idx];
+      progressEl.textContent = `問題 ${idx+1} / ${pool.length}`;
+      qTextEl.textContent = q.text;
+      imgBox.innerHTML = q.image ? `<img class="qimg" src="${q.image}" alt="">` : '';
+      inputEl.value = '';
+      inputEl.focus();
+      feedbackEl.textContent = '';
+    }
+
+    function advance(){ idx++; render(); }
+
+    document.getElementById('submit').addEventListener('click', () => {
+      const q = pool[idx];
+      const user = normalize(inputEl.value);
+      if (!user){ inputEl.focus(); return; }
+      const ok = (q.accept || []).some(a => normalize(a) === user);
+      if (ok){
+        setStatus(q.id, 'correct');
+        setPts(getPts()+1);
+        feedbackEl.innerHTML = `<div class="ok">正解！ +1pt</div>`;
+        setTimeout(advance, 600);
+      }else{
+        setStatus(q.id, 'incorrect');
+        const first = q.accept?.[0] || '';
+        feedbackEl.innerHTML = `<div class="ng">不正解… 正答例：${first}</div>`;
+      }
     });
-  }
-  return out;
-}
+
+    document.getElementById('skip').addEventListener('click', () => {
+      feedbackEl.innerHTML = `<div class="hint">スキップ（未回答）</div>`;
+      setTimeout(advance, 300);
+    });
+
+    (async function init(){
+      try{
+        const all = await loadQuestions();
+        // モード：不正解＆未回答 → 「correct」以外を出題
+        pool = (mode === 'miss_unans') ? all.filter(q => getStatus(q.id) !== 'correct') : all.slice();
+        if (!pool.length){
+          qTextEl.textContent = '出題対象がありません（全問正解の可能性があります）';
+          imgBox.innerHTML = '';
+          document.getElementById('stage').classList.add('done');
+          return;
+        }
+        render();
+      }catch(e){
+        qTextEl.textContent = '問題の読み込みに失敗しました。共有設定またはURLをご確認ください。';
+        console.error(e);
+      }
+    })();
+  </script>
+</body>
+</html>
