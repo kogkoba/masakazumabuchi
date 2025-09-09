@@ -89,68 +89,88 @@
       return parseCSV(text);
     }
 
-    function rowsToQuestions(rows){
-      if (!rows.length) return [];
-      const header = rows[0].map(h => h.trim());
-      const idx = name => header.indexOf(name);
-      const qi = {
-        id: idx('id'),
-        week: idx('week'),
-        question: idx('question'),
-        answer: idx('answer'),
-        alt: idx('alt_answers'),
-        img: idx('image_url'),
-        enabled: idx('enabled')
-      };
-      const out = [];
-      for (let r=1; r<rows.length; r++){
-        const row = rows[r];
-        if (!row[qi.id] || !row[qi.question]) continue;
-        // enabled=FALSE は除外
-        const enabled = (row[qi.enabled] || '').toString().trim().toUpperCase();
-        if (enabled === 'FALSE') continue;
+<script>
+  // ... 略 ...
 
-        const accepts = [];
-        if (row[qi.answer]) accepts.push(row[qi.answer].trim());
-        if (row[qi.alt]) accepts.push(...row[qi.alt].split('|').map(s=>s.trim()).filter(Boolean));
+  function rowsToQuestions(rows){
+    if (!rows.length) return [];
+    // ① ヘッダー名を正規化（BOM除去＋trim＋小文字化）
+    const header = rows[0].map(h => (h || '')
+      .toString()
+      .replace(/^\ufeff/, '')   // ← 先頭BOMを除去
+      .trim()
+      .toLowerCase()
+    );
+    const idx = name => header.indexOf(name);
 
-        out.push({
-          id: row[qi.id].trim(),
-          text: row[qi.question].trim(),
-          week: row[qi.week]?.trim() || '',
-          image: row[qi.img]?.trim() || '',
-          type: 'typing',
-          accept: accepts
-        });
+    const qi = {
+      id: idx('id'),
+      week: idx('week'),
+      question: idx('question'),
+      answer: idx('answer'),
+      alt: idx('alt_answers'),
+      img: idx('image_url'),
+      enabled: idx('enabled')
+    };
+
+    const out = [];
+    for (let r=1; r<rows.length; r++){
+      const row = rows[r];
+
+      // ② enabled が FALSE は除外（空欄/TRUE/true は出題）
+      const enabled = ((qi.enabled>=0 ? row[qi.enabled] : '') || '')
+        .toString().trim().toUpperCase();
+      if (enabled === 'FALSE') continue;
+
+      const id = (qi.id>=0 ? row[qi.id] : '').toString().trim();
+      const question = (qi.question>=0 ? row[qi.question] : '').toString().trim();
+      if (!id || !question) continue;
+
+      const accepts = [];
+      const ans = (qi.answer>=0 ? row[qi.answer] : '').toString().trim();
+      const alt = (qi.alt>=0 ? row[qi.alt] : '').toString();
+      if (ans) accepts.push(ans);
+      if (alt) {
+        // 半角 | と 全角 ｜ の両方を許容
+        alt.split(/[|｜]/).map(s=>s.trim()).filter(Boolean).forEach(s=>accepts.push(s));
       }
-      return out;
+
+      out.push({
+        id,
+        text: question,
+        week: (qi.week>=0 ? row[qi.week] : '').toString().trim(),
+        image: (qi.img>=0 ? row[qi.img] : '').toString().trim(),
+        type: 'typing',
+        accept: accepts
+      });
     }
+    return out;
+  }
 
-    async function loadQuestions(){
-      const index = (window.DATA && window.DATA[subject]) || { lessons: [] };
-      let targets = [];
-      if (!lesson || lesson === 'all'){ targets = index.lessons; }
-      else { const hit = index.lessons.find(l => l.id === lesson); if (hit) targets = [hit]; }
-      let all = [];
-      for (const t of targets){
-        const url = t.csv || t.file;
-        if (!url) continue;
-        if (/\.json($|\?)/.test(url)){
-          const r = await fetch(url, { cache: 'no-store' });
-          const arr = await r.json();
-          all = all.concat(arr);
-        }else{
-          const rows = await fetchCSV(url);
-          all = all.concat(rowsToQuestions(rows));
-        }
+  async function loadQuestions(){
+    const index = (window.DATA && window.DATA[subject]) || { lessons: [] };
+    let all = [];
+    for (const t of index.lessons){
+      const url = t.csv || t.file;
+      if (!url) continue;
+      if (/\.json($|\?)/.test(url)){
+        const r = await fetch(url, { cache: 'no-store' });
+        all = all.concat(await r.json());
+      }else{
+        const rows = await fetchCSV(url);
+        all = all.concat(rowsToQuestions(rows));
       }
-      // 週フィルタ
-      if (scope === 'week' && weekReq){
-        all = all.filter(q => (q.week === weekReq));
-      }
-      return all;
     }
+    // ③ 週フィルタ（左右空白を除去して比較）
+    if ((qs.get('scope') || 'all') === 'week'){
+      const want = (qs.get('week') || '').trim();
+      all = all.filter(q => (q.week || '').trim() === want);
+    }
+    return all;
+  }
 
+  // ... 略 ...
+</script>
     // ===== 出題ロジック =====
     let pool = [];
     let idx = 0;
