@@ -186,7 +186,8 @@
       }
       const q = pool[idx];
       progressEl.textContent = `問題 ${idx+1} / ${pool.length}`;
-      qTextEl.textContent = q.week ? `[${q.week}] ${q.text}` : q.text;
+      qTextEl.textContent = q.text;   // weekは非表示
+
       imgBox.innerHTML = q.image ? `<img class="qimg" src="${q.image}" alt="">` : '';
       inputEl.value = '';
       inputEl.focus();
