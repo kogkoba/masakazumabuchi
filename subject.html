@@ -31,6 +31,14 @@
       <label class="row"><input type="radio" name="mode" value="miss_unans" checked> 不正解＆未回答のみ</label>
       <label class="row"><input type="radio" name="mode" value="all"> 全問</label>
     </section>
+    <!-- 出題順序 -->
+    <section class="panel">
+      <h2>出題順序</h2>
+      <label class="row"><input type="radio" name="order" value="normal" checked> 通常（CSVの順）</label>
+      <label class="row"><input type="radio" name="order" value="random"> ランダム</label>
+      <label class="row"><input type="radio" name="order" value="desc"> 降順</label>
+    </section>
+
 
     <div class="row end">
       <button id="start" class="primary">クイズ開始</button>
@@ -119,18 +127,20 @@
     scopeRadios.forEach(r=>r.addEventListener('change',updateWeekEnabled));
     updateWeekEnabled();
 
-    // 開始
-    document.getElementById('start').addEventListener('click', () => {
-      const mode = document.querySelector('input[name="mode"]:checked').value;
-      const scope = document.querySelector('input[name="scope"]:checked').value;
-      const p = new URLSearchParams({ subject, mode, scope });
-      if (scope === 'week') {
-        const w = weekSel.value;
-        if (!w){ alert('週（WEEK）を選んでください'); return; }
-        p.set('week', w);
-      }
-      location.href = `quiz.html?${p.toString()}`;
-    });
+    // 開始document.getElementById('start').addEventListener('click', () => {
+  const mode = document.querySelector('input[name="mode"]:checked').value;
+  const scope = document.querySelector('input[name="scope"]:checked').value;
+  const order = document.querySelector('input[name="order"]:checked').value;  // ← 追加
+
+  const p = new URLSearchParams({ subject, mode, scope, order });
+  if (scope === 'week') {
+    const w = weekSel.value;
+    if (!w){ alert('週（WEEK）を選んでください'); return; }
+    p.set('week', w);
+  }
+  location.href = `quiz.html?${p.toString()}`;
+});
+
   </script>
 </body>
 </html>
