@@ -3,51 +3,80 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>科目を選択</title>
+  <title>範囲とモードの選択</title>
   <link rel="stylesheet" href="style.css">
+  <script src="assets/data.js" defer></script>
 </head>
 <body>
-  <main class="center">
-    <section class="card">
-      <h1 id="subjectTitle">科目</h1>
+  <main class="wrap">
+    <a class="back" href="index.html">← TOPへ</a>
+    <h1 id="subjectTitle">科目</h1>
 
-      <div class="counter">
-        <div class="pill">本日の獲得ポイント：<span id="points">0</span></div>
-        <a class="btn ghost" href="./">トップへ戻る</a>
-      </div>
-
-      <div class="hr"></div>
-      <p class="muted" style="margin:0 0 8px">モードを選んでください</p>
-
+    <section class="panel">
+      <h2>範囲を選ぶ</h2>
+      <label class="row">
+        <input type="radio" name="scope" value="all" checked> 全期間（その科目の全授業分）
+      </label>
       <div class="row">
-        <!-- 次のページ（出題画面）への遷移。後で quiz.html を実装して接続します -->
-        <a class="btn primary" id="allBtn">全問モード</a>
-        <a class="btn ghost" id="wrongBtn">不正解モード</a>
-      </div>
-
-      <div class="back">
-        <a class="btn ghost" href="./">← 科目選択に戻る</a>
+        <input type="radio" name="scope" value="lesson"> 授業回を選ぶ：
+        <select id="lessonSelect" disabled></select>
       </div>
     </section>
+
+    <section class="panel">
+      <h2>出題モードを選ぶ</h2>
+      <label class="row"><input type="radio" name="mode" value="miss_unans" checked> 不正解＆未回答</label>
+      <label class="row"><input type="radio" name="mode" value="all"> 全問</label>
+    </section>
+
+    <div class="row end">
+      <button id="start" class="primary">クイズ開始</button>
+    </div>
   </main>
 
   <script>
-    // 共有：ポイント表示
-    const key = 'mbg_points';
-    const $ = (id)=>document.getElementById(id);
-    function getPoints(){ return +(localStorage.getItem(key) || 0); }
-    function setPoints(v){ localStorage.setItem(key, v); $('points').textContent = v; }
-    setPoints(getPoints());
+    // 便利関数
+    const qs = new URLSearchParams(location.search);
+    const subject = qs.get('subject') || 'social';
+    const titleMap = { math:'算数', kokugo:'国語', science:'理科', social:'社会' };
+    document.getElementById('subjectTitle').textContent = `科目：${titleMap[subject] || subject}`;
 
-    // URLから科目名を取得
-    const params = new URLSearchParams(location.search);
-    const subject = params.get('name') || '科目';
-    $('subjectTitle').textContent = subject;
+    // DATA は assets/data.js で定義
+    const entry = (window.DATA && window.DATA[subject]) || { lessons: [] };
 
-    // 後で quiz.html を実装してここへ遷移
-    const to = (mode)=> `quiz.html?subject=${encodeURIComponent(subject)}&mode=${mode}`;
-    $('allBtn').href   = to('all');
-    $('wrongBtn').href = to('wrongOrNew');
+    const scopeRadios = [...document.querySelectorAll('input[name="scope"]')];
+    const lessonSel = document.getElementById('lessonSelect');
+
+    // 授業回の選択肢生成
+    function renderLessons() {
+      lessonSel.innerHTML = '';
+      entry.lessons.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.id;      // 例: "G4T3-nihon-no-kikou"
+        opt.textContent = l.title; // 例: "小４(3) 日本の気候"
+        lessonSel.appendChild(opt);
+      });
+    }
+    renderLessons();
+
+    // ラジオ連動
+    scopeRadios.forEach(r => {
+      r.addEventListener('change', () => {
+        lessonSel.disabled = (document.querySelector('input[name="scope"]:checked').value !== 'lesson');
+      });
+    });
+
+    // 開始
+    document.getElementById('start').addEventListener('click', () => {
+      const scope = document.querySelector('input[name="scope"]:checked').value;
+      const mode  = document.querySelector('input[name="mode"]:checked').value;
+      const params = new URLSearchParams();
+      params.set('subject', subject);
+      params.set('mode', mode);
+      if (scope === 'lesson') params.set('lesson', lessonSel.value);
+      else params.set('lesson', 'all');
+      location.href = `quiz.html?${params.toString()}`;
+    });
   </script>
 </body>
 </html>
