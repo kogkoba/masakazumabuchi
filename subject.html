@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>範囲とモードの選択</title>
   <link rel="stylesheet" href="style.css">
-  <!-- 同期読み込みに変更（deferを外す） -->
+  <!-- data.js は同期読み込み（deferなし）-->
   <script src="assets/data.js"></script>
 </head>
 <body>
@@ -13,6 +13,7 @@
     <a id="back" class="back" href="index.html">← TOPへ</a>
     <h1 id="subjectTitle">科目</h1>
 
+    <!-- 1) レッスン（シート）選択 -->
     <section class="panel">
       <h2>授業回（シート）を選ぶ</h2>
       <select id="lessonSelect"></select>
@@ -22,6 +23,20 @@
       </div>
     </section>
 
+    <!-- 2) 出題範囲（全授業 or 週を選ぶ） -->
+    <section class="panel">
+      <h2>出題範囲</h2>
+      <label class="row"><input type="radio" name="scope" value="all" checked> 全授業</label>
+      <div class="row">
+        <label><input type="radio" name="scope" value="week"> 授業（週）を選ぶ：</label>
+        <select id="weekSelect" disabled>
+          <option value="">（読み込み中）</option>
+        </select>
+      </div>
+      <small class="muted">※週（WEEK）はシートの <code>week</code> 列から自動生成します</small>
+    </section>
+
+    <!-- 3) 出題モード -->
     <section class="panel">
       <h2>出題モード</h2>
       <label class="row"><input type="radio" name="mode" value="miss_unans" checked> 不正解＆未回答のみ</label>
@@ -34,6 +49,7 @@
   </main>
 
   <script>
+    // ===== 画面基本 =====
     const qs = new URLSearchParams(location.search);
     const subject = qs.get('subject') || 'social';
     const titleMap = { math:'算数', kokugo:'国語', science:'理科', social:'社会' };
@@ -41,11 +57,78 @@
     document.getElementById('back').href = `index.html`;
 
     const data = (window.DATA && window.DATA[subject]) || { lessons: [] };
-    const sel = document.getElementById('lessonSelect');
-    const warn = document.getElementById('lessonWarn');
+    const lessonSel = document.getElementById('lessonSelect');
+    const weekSel   = document.getElementById('weekSelect');
+    const warn      = document.getElementById('lessonWarn');
+
+    // ===== CSVパーサ（軽量）=====
+    function parseCSV(text){
+      const rows = [];
+      let cur = [], cell = '', inQuote = false;
+      for (let i=0; i<text.length; i++){
+        const c = text[i], n = text[i+1];
+        if (inQuote){
+          if (c === '"' && n === '"'){ cell += '"'; i++; }
+          else if (c === '"'){ inQuote = false; }
+          else { cell += c; }
+        }else{
+          if (c === '"'){ inQuote = true; }
+          else if (c === ','){ cur.push(cell); cell=''; }
+          else if (c === '\n'){ cur.push(cell); rows.push(cur); cur=[]; cell=''; }
+          else if (c === '\r'){ /* skip */ }
+          else { cell += c; }
+        }
+      }
+      if (cell.length>0 || cur.length>0){ cur.push(cell); rows.push(cur); }
+      return rows;
+    }
+
+    async function fetchCSV(url){
+      const res = await fetch(url, { cache: 'no-store' });
+      if (!res.ok) throw new Error('CSV fetch failed');
+      return parseCSV(await res.text());
+    }
+
+    async function loadWeeksForLesson(lesson){
+      // lesson.csv から week 列のユニーク値を抽出
+      weekSel.innerHTML = '<option value="">（読み込み中）</option>';
+      try{
+        const rows = await fetchCSV(lesson.csv);
+        if (!rows.length){ weekSel.innerHTML = '<option value="">（データなし）</option>'; return; }
+        const header = rows[0].map(h => h.trim());
+        const wIdx = header.indexOf('week');
+        const enIdx = header.indexOf('enabled');
+        const set = new Set();
+        for (let r=1; r<rows.length; r++){
+          const row = rows[r];
+          if (enIdx >= 0){
+            const en = (row[enIdx] || '').toString().trim().toUpperCase();
+            if (en === 'FALSE') continue;
+          }
+          const w = (wIdx >= 0 ? (row[wIdx] || '').toString().trim() : '');
+          if (w) set.add(w);
+        }
+        const weeks = Array.from(set);
+        // 並び順：そのまま or 文字列ソート
+        weeks.sort((a,b)=> a.localeCompare(b, 'ja', { numeric:true }));
+        weekSel.innerHTML = '';
+        if (!weeks.length){
+          weekSel.innerHTML = '<option value="">（週が見つかりません）</option>';
+        }else{
+          weeks.forEach(w=>{
+            const opt = document.createElement('option');
+            opt.value = w; opt.textContent = w;
+            weekSel.appendChild(opt);
+          });
+        }
+      }catch(e){
+        console.error(e);
+        weekSel.innerHTML = '<option value="">（取得に失敗）</option>';
+      }
+    }
 
     function renderLessons(){
-      sel.innerHTML = '';
+      lessonSel.innerHTML = '';
       if (!data.lessons || !data.lessons.length) {
         warn.style.display = 'block';
         return;
@@ -54,15 +137,43 @@
         const opt = document.createElement('option');
         opt.value = l.id;
         opt.textContent = l.title || l.id;
-        sel.appendChild(opt);
+        lessonSel.appendChild(opt);
       });
     }
+
     renderLessons();
 
+    // 初回：最初のレッスンで week 値をロード
+    if (data.lessons && data.lessons[0]) {
+      loadWeeksForLesson(data.lessons[0]);
+    }
+
+    // レッスン変更時は week 値を再取得
+    lessonSel.addEventListener('change', () => {
+      const lesson = data.lessons.find(x => x.id === lessonSel.value);
+      if (lesson) loadWeeksForLesson(lesson);
+    });
+
+    // scope ラジオ：week 選択の有効/無効
+    const scopeRadios = [...document.querySelectorAll('input[name="scope"]')];
+    function updateWeekEnabled(){
+      const scope = document.querySelector('input[name="scope"]:checked').value;
+      weekSel.disabled = (scope !== 'week');
+    }
+    scopeRadios.forEach(r => r.addEventListener('change', updateWeekEnabled));
+    updateWeekEnabled();
+
+    // 開始
     document.getElementById('start').addEventListener('click', () => {
-      const mode = document.querySelector('input[name="mode"]:checked').value;
-      const lesson = sel.value;
-      const p = new URLSearchParams({ subject, mode, lesson });
+      const lessonId = lessonSel.value;
+      const mode  = document.querySelector('input[name="mode"]:checked').value;
+      const scope = document.querySelector('input[name="scope"]:checked').value;
+      const p = new URLSearchParams({ subject, lesson: lessonId, mode, scope });
+      if (scope === 'week') {
+        const w = weekSel.value;
+        if (!w) { alert('週（WEEK）を選んでください'); return; }
+        p.set('week', w);
+      }
       location.href = `quiz.html?${p.toString()}`;
     });
   </script>
